@@ -44,9 +44,9 @@ def main():
     print("{} b=0 images will be averaged.".format(np.sum(b0_idx)))
 
     # Make sure we have the right numbers of each bval.
-    assert np.sum(idx) == 91
-    assert np.sum(np.logical_and(2000-15 <= gtab.bvals, gtab.bvals <= 2000+15)) == 90
-    assert np.sum(np.logical_and(3000-20 <= gtab.bvals, gtab.bvals <= 3000+20)) == 90
+    #assert np.sum(idx) == 91
+    #assert np.sum(np.logical_and(2000-15 <= gtab.bvals, gtab.bvals <= 2000+15)) == 90
+    #assert np.sum(np.logical_and(3000-20 <= gtab.bvals, gtab.bvals <= 3000+20)) == 90
 
     new_bvals = gtab.bvals[idx]
     assert new_bvals[0] <= 5

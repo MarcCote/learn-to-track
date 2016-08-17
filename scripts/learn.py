@@ -198,14 +198,14 @@ def main():
 
         lookahead_loss = valid_error.sum
 
-        direction_norm = views.MonitorVariable(T.sqrt(sum(map(lambda d: T.sqr(d).sum(), loss.gradients.values()))))
-        # trainer.append_task(tasks.Print("||d|| : {0:.4f}", direction_norm))
-
-        # logger = tasks.Logger(train_error.mean, valid_error.mean, valid_error.sum, direction_norm)
-        logger = tasks.Logger(valid_error.mean, valid_error.sum, direction_norm)
-        trainer.append_task(logger)
-
         if args.view:
+            direction_norm = views.MonitorVariable(T.sqrt(sum(map(lambda d: T.sqr(d).sum(), loss.gradients.values()))))
+            # trainer.append_task(tasks.Print("||d|| : {0:.4f}", direction_norm))
+
+            # logger = tasks.Logger(train_error.mean, valid_error.mean, valid_error.sum, direction_norm)
+            logger = tasks.Logger(valid_error.mean, valid_error.sum, direction_norm)
+            trainer.append_task(logger)
+
             import pylab as plt
 
             def _plot(*args, **kwargs):

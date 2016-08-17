@@ -46,6 +46,7 @@ def build_argparser():
     p.add_argument('--bvals', help='File containing diffusion gradient lengths (Default: guess it from `signal`).')
     p.add_argument('--bvecs', help='File containing diffusion gradient directions (Default: guess it from `signal`).')
     p.add_argument('--out', metavar='FILE', default="dataset.npz", help='output filename (.npz). Default: dataset.npz')
+    p.add_argument('--ref', help='Reference containing information of where are the streamlines (.nii|.nii.gz).')
     p.add_argument('--dtype', type=str, default="float32", help="'float16' or 'float32'. Default: 'float32'")
 
     p.add_argument('-v', '--verbose', action='store_true', help='enable verbose mode.')
@@ -69,6 +70,10 @@ def main():
 
     # Compute matrix that brings streamlines back to diffusion voxel space.
     rasmm2vox_affine = np.linalg.inv(signal.affine)
+
+    if args.ref is not None:
+        ref = nib.load(args.ref)
+        rasmm2vox_affine = np.linalg.inv(ref.affine)
 
     # Retrieve data.
     with Timer("Retrieving data", newline=args.verbose):
