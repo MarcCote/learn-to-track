@@ -18,7 +18,7 @@ floatX = theano.config.floatX
 class GRU_Regression(GRU):
     """ A standard GRU model with a regression layer stacked on top of it.
     """
-    def __init__(self, dwis, input_size, hidden_sizes, output_size, **_):
+    def __init__(self, dwis, mean, std, input_size, hidden_sizes, output_size, **_):
         """
         Parameters
         ----------
@@ -34,6 +34,8 @@ class GRU_Regression(GRU):
         super().__init__(input_size, hidden_sizes)
 
         self.dwis = [sharedX(dwi, name='dwi', keep_on_cpu=False) for dwi in dwis]
+        self.mean = mean
+        self.std = std
 
         # Precompute strides that will be used in the interpolation.
         self.dwi_strides = []
@@ -53,6 +55,8 @@ class GRU_Regression(GRU):
     def hyperparameters(self):
         hyperparameters = super().hyperparameters
         hyperparameters['output_size'] = self.output_size
+        hyperparameters['mean'] = self.mean
+        hyperparameters['std'] = self.std
         return hyperparameters
 
     @property
@@ -76,9 +80,13 @@ class GRU_Regression(GRU):
         # data_at_coords.shape : (batch_size, input_size)
         data_at_coords = T.concatenate(data_at_coords, axis=0)
 
+        # Standardize diffusion data (i.e. mean=0 and variance=1)
+        # standardized_data_at_coords.shape : (batch_size, input_size)
+        standardized_data_at_coords = (data_at_coords - self.mean) / self.std
+
         # Hidden state to be passed to the next GRU iteration (next _fprop call)
         # next_hidden_state.shape : n_layers * (batch_size, layer_size)
-        next_hidden_state = super()._fprop(data_at_coords, *args)
+        next_hidden_state = super()._fprop(standardized_data_at_coords, *args)
 
         # Compute the direction to follow for step (t)
         regression_out = self.layer_regression.fprop(next_hidden_state[-1])

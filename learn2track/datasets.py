@@ -7,6 +7,7 @@ import theano.tensor as T
 import nibabel as nib
 
 from smartlearner import Dataset
+from learn2track import utils
 from learn2track.utils import Timer
 from learn2track import neurotools
 from learn2track.neurotools import TractographyData
@@ -173,6 +174,35 @@ class TractographyDataset(MaskedSequenceDataset):
         # self.bundle_counts = np.bincount(self.bundle_ids)
         # self.bundle_indices = [np.where(self.bundle_ids == i)[0] for i in range(len(self.bundle_names))]
         # super().__init__(self.streamlines, targets=None, name=name)
+
+    def compute_mean_and_std(self):
+        """ Compute mean and standard deviation of all diffusion data.
+
+        This method performs the computation using a two-pass algorithm _[1].
+
+        References
+        ----------
+        [1] https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance
+        """
+        mean = np.zeros(self.volumes[0].shape[-1])
+        var = np.zeros(self.volumes[0].shape[-1])
+
+        for i, subject in enumerate(self.subjects):
+            print(i)
+            for coords in utils.chunk(subject.streamlines._data, n=10000):
+                data_at_coords = neurotools.eval_volume_at_3d_coordinates(subject.volume, coords)
+                mean += data_at_coords.sum(axis=0)
+
+        mean /= len(self.streamlines)
+
+        for i, subject in enumerate(self.subjects):
+            print(i)
+            for coords in utils.chunk(subject.streamlines._data, n=10000):
+                data_at_coords = neurotools.eval_volume_at_3d_coordinates(subject.volume, coords)
+                var += np.sum(data_at_coords - mean, axis=0)**2
+
+        std = np.sqrt(var / (len(self.streamlines)-1))
+        return mean, std
 
     def __len__(self):
         return len(self.streamlines)

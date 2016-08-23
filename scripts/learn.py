@@ -139,8 +139,14 @@ def main():
         print ("An epoch will be composed of {} updates.".format(batch_scheduler.nb_updates_per_epoch))
         print (batch_scheduler.input_size, args.hidden_sizes, batch_scheduler.target_size)
 
+    with Timer("Preprocessing (standardization of diffusion data)"):
+        mean, std = trainset.compute_mean_and_std()
+
+    from ipdb import set_trace as dbg
+    dbg()
+
     with Timer("Creating model"):
-        model = model_factory(hyperparams, batch_scheduler)
+        model = model_factory(hyperparams, batch_scheduler, mean=mean, std=std)
         model.initialize(weigths_initializer_factory(args.weights_initialization,
                                                      seed=args.initialization_seed))
 

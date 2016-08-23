@@ -83,6 +83,12 @@ def softmax(x, axis=None):
     return T.exp(x - logsumexp(x, axis=axis, keepdims=True))
 
 
+def chunk(sequence, n):
+    """ Yield successive n-sized chunks from sequence. """
+    for i in range(0, len(sequence), n):
+        yield sequence[i:i + n]
+
+
 def log_variables(batch_scheduler, model, *symb_vars):
     # Gather updates from the optimizer and the batch scheduler.
     f = theano.function([],
