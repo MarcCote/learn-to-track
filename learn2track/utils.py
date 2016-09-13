@@ -123,6 +123,11 @@ def maybe_create_experiment_folder(args, exclude=[]):
         print("### Resuming experiment ({0}). ###\n".format(experiment_name))
         # Check if provided hyperparams match those in the experiment folder
         hyperparams_loaded = smartutils.load_dict_from_json_file(pjoin(experiment_path, "hyperparams.json"))
+
+        for name in exclude:
+            if name in hyperparams_loaded:
+                del hyperparams_loaded[name]
+
         if hyperparams != hyperparams_loaded:
             print("{\n" + "\n".join(["{}: {}".format(k, hyperparams[k]) for k in sorted(hyperparams.keys())]) + "\n}")
             print("{\n" + "\n".join(["{}: {}".format(k, hyperparams_loaded[k]) for k in sorted(hyperparams_loaded.keys())]) + "\n}")

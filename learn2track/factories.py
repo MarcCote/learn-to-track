@@ -61,7 +61,7 @@ def optimizer_factory(hyperparams, loss):
         from smartlearner.optimizers import Adam
         options = hyperparams["Adam"].split()
         lr = float(options[0]) if len(options) > 0 else 0.0001
-        return Adam(loss=loss, lr=lr)
+        return Adam(loss=loss, lr=lr, epsilon=1e-6)
 
     elif hyperparams["RMSProp"] is not None:
         from smartlearner.optimizers import RMSProp

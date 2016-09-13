@@ -80,7 +80,9 @@ class GRU_Regression(GRU):
                                        sequences=[T.transpose(X, axes=(1, 0, 2))],
                                        outputs_info=outputs_info_h + [None],
                                        non_sequences=self.parameters + self.volume_manager.volumes,
-                                       strict=True)
+                                       strict=True,
+                                       #truncate_gradient=100
+                                       )
 
         self.graph_updates = updates
         # Put back the examples so they are in the first dimension.
@@ -154,8 +156,10 @@ class L2DistanceForSequences(Loss):
         if self.normalize_output:
             regression_outputs /= (T.sqrt(T.sum(regression_outputs**2, axis=2, keepdims=True) + self.eps))
 
+        self.regression_outputs = regression_outputs  # dbg
         # L2_errors_per_time_step.shape = (batch_size,)
-        self.L2_errors_per_time_step = T.sqrt(T.sum(((regression_outputs - self.dataset.symb_targets)**2), axis=2))
+        # self.L2_errors_per_time_step = T.sqrt(T.sum(((regression_outputs - self.dataset.symb_targets)**2), axis=2))  # NaN
+        self.L2_errors_per_time_step = T.sum(((regression_outputs - self.dataset.symb_targets)**2), axis=2)
         # avg_L2_error_per_seq.shape = (batch_size,)
         self.avg_L2_error_per_seq = T.sum(self.L2_errors_per_time_step*mask, axis=1) / T.sum(mask, axis=1)
 
