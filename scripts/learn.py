@@ -118,6 +118,45 @@ def build_argparser():
     return p
 
 
+def tsne_view(trainset, volume_manager):
+
+    batch_scheduler = TractographyBatchScheduler(trainset,
+                                                 batch_size=20000,
+                                                 noisy_streamlines_sigma=False,
+                                                 seed=1234,
+                                                 normalize_target=True)
+    rng = np.random.RandomState(42)
+    rng.shuffle(batch_scheduler.indices)
+
+    inputs, targets, mask = batch_scheduler._next_batch(3)
+    mask = mask.astype(bool)
+    idx = np.arange(mask.sum())
+    rng.shuffle(idx)
+
+    coords = T.matrix('coords')
+    eval_at_coords = theano.function([coords], volume_manager.eval_at_coords(coords))
+
+    M = 2000 * len(trainset.subjects)
+    coords = inputs[mask][idx[:M]]
+    X = eval_at_coords(coords)
+
+    from sklearn.manifold.t_sne import TSNE
+    tsne = TSNE(n_components=2, verbose=2, random_state=42)
+    Y = tsne.fit_transform(X)
+
+    import matplotlib.pyplot as plt
+    plt.figure()
+    ids = range(len(trainset.subjects))
+    markers = ['s', 'o', '^', 'v']
+    colors = ['cyan', 'darkorange', 'darkgreen', 'purple']
+    for i, marker, color in zip(ids, markers, colors):
+        idx = coords[:, -1] == i
+        print("Subject #{}: ".format(i), idx.sum())
+        plt.scatter(Y[idx, 0], Y[idx, 1], 20, color=color, marker=marker, label="Subject #{}".format(i))
+
+    plt.legend()
+    plt.show()
+
 def main():
     parser = build_argparser()
     args = parser.parse_args()
@@ -146,6 +185,11 @@ def main():
                                                      normalize_target=hyperparams['normalize'])
         print ("An epoch will be composed of {} updates.".format(batch_scheduler.nb_updates_per_epoch))
         print (volume_manager.data_dimension, args.hidden_sizes, batch_scheduler.target_size)
+
+        if args.view:
+            tsne_view(trainset, volume_manager)
+            sys.exit(0)
+
 
     with Timer("Creating model"):
         model = model_factory(hyperparams,

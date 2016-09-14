@@ -201,34 +201,30 @@ def eval_volume_at_3d_coordinates(volume, coords):
         return np.ascontiguousarray(np.array(values_4d).T)
 
 
-def normalize_dwi(dwi, bvals):
+def normalize_dwi(weights, b0):
     """ Normalize dwi by the first b0.
 
     Parameters:
     -----------
-    dwi : `nibabel.NiftiImage` object
-        Diffusion weighted images (4D).
-    bvals : list of int
-        B-values used with each direction. With this we can
-        know which "directions" correspond to B0 images.
+    weights : ndarray of shape (X, Y, Z, #gradients)
+        Diffusion weighted images.
+    b0 : ndarray of shape (X, Y, Z)
+        B0 image.
 
     Returns
     -------
     ndarray
-        Diffusion weights normalized by the first B0.
+        Diffusion weights normalized by the B0.
     """
-    # Indices of bvals sorted
-    sorted_bvals_idx = np.argsort(bvals)
-    nb_b0s = int(np.sum(bvals == 0))
-    dwi_weights = dwi.get_data().astype("float32")
+    b0 = b0[..., None]  # Easier to work if it is a 4D array.
 
-    # Get the first b0.
-    b0 = dwi_weights[..., [sorted_bvals_idx[0]]]
-    # Keep only b-value greater than 0
-    weights = dwi_weights[..., sorted_bvals_idx[nb_b0s:]]
     # Make sure in every voxels weights are lower than ones from the b0.
     # Should not happen, but with the noise we never know!
-    weights = np.minimum(weights, b0)
+    nb_erroneous_voxels = np.sum(weights > b0)
+    if nb_erroneous_voxels != 0:
+        print ("Nb. erroneous voxels: {}".format(nb_erroneous_voxels))
+        weights = np.minimum(weights, b0)
+
     # Normalize dwi using the b0.
     weights_normed = weights / b0
     weights_normed[np.logical_not(np.isfinite(weights_normed))] = 0.
@@ -236,7 +232,7 @@ def normalize_dwi(dwi, bvals):
     return weights_normed
 
 
-def get_spherical_harmonics_coefficients(dwi, bvals, bvecs, sh_order=8, smooth=0.006):
+def get_spherical_harmonics_coefficients(dwi, bvals, bvecs, sh_order=8, smooth=0.006, first=False):
     """ Compute coefficients of the spherical harmonics basis.
 
     Parameters
@@ -255,16 +251,31 @@ def get_spherical_harmonics_coefficients(dwi, bvals, bvecs, sh_order=8, smooth=0
 
     Returns
     -------
-    ndarray
-        Diffusion weights resampled according to `sphere`.
+    sh_coeffs : ndarray of shape (X, Y, Z, #coeffs)
+        Spherical harmonics coefficients at every voxel. The actual number of
+        coeffs depends on `sh_order`.
     """
-    # Start by normalizing DWI with the B0.
-    weights = normalize_dwi(dwi, bvals)
+    bvals = np.asarray(bvals)
+    bvecs = np.asarray(bvecs)
+    dwi_weights = dwi.get_data().astype("float32")
 
-    idx = np.where(bvals >= 1e-4)[0]  # Discard b-value == 0
-    bvals = np.asarray(bvals)[idx]
-    bvecs = np.asarray(bvecs)[idx]
-    # bvecs *= np.array([1, -1, 1], dtype=np.float32)  # Debugging HACK
+    # permutation = np.arange(len(bvals))
+    # if first:
+    #     print("Shuffling")
+    #     rng = np.random.RandomState(54321)
+    #     rng.shuffle(permutation)
+    #     bvecs = bvecs[permutation]
+    #     bvals = bvals[permutation]
+    #     dwi_weights = dwi_weights[..., permutation]
+
+    # Exract the averaged b0.
+    b0_idx = bvals == 0
+    b0 = dwi_weights[..., b0_idx].mean(axis=3)
+
+    # Extract diffusion weights and normalize by the b0.
+    bvecs = bvecs[np.logical_not(b0_idx)]
+    weights = dwi_weights[..., np.logical_not(b0_idx)]
+    weights = normalize_dwi(weights, b0)
 
     # Assuming all directions are on the hemisphere.
     raw_sphere = HemiSphere(xyz=bvecs)
@@ -275,6 +286,7 @@ def get_spherical_harmonics_coefficients(dwi, bvals, bvecs, sh_order=8, smooth=0
     L = -n * (n + 1)
     invB = smooth_pinv(Ba, np.sqrt(smooth) * L)
     data_sh = np.dot(weights, invB.T)
+
     return data_sh
 
 

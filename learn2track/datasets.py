@@ -176,7 +176,7 @@ class TractographyDataset(MaskedSequenceDataset):
 def load_tractography_dataset(subject_files, volume_manager, name="HCP", use_sh_coeffs=False):
     subjects = []
     with Timer("  Loading subject(s)", newline=True):
-        for subject_file in sorted(subject_files):
+        for i, subject_file in enumerate(sorted(subject_files)):
             print("    {}".format(subject_file))
             tracto_data = TractographyData.load(subject_file)
 
@@ -185,7 +185,7 @@ def load_tractography_dataset(subject_files, volume_manager, name="HCP", use_sh_
             bvecs = tracto_data.gradients.bvecs
             if use_sh_coeffs:
                 # Use 45 spherical harmonic coefficients to represent the diffusion signal.
-                volume = neurotools.get_spherical_harmonics_coefficients(dwi, bvals, bvecs).astype(np.float32)
+                volume = neurotools.get_spherical_harmonics_coefficients(dwi, bvals, bvecs, first=i==0).astype(np.float32)
             else:
                 # Resample the diffusion signal to have 100 directions.
                 volume = neurotools.resample_dwi(dwi, bvals, bvecs).astype(np.float32)
