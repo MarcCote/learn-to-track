@@ -186,11 +186,6 @@ class LayerGRU(object):
             self.U = sharedX(value=np.zeros((hidden_size, 2*hidden_size)), name=self.name+'_U')
             self.Uh = sharedX(value=np.zeros((hidden_size, hidden_size)), name=self.name+'_Uh')
 
-        # Only used for initialization.
-        self.init_Uz = sharedX(value=np.zeros((hidden_size, hidden_size)), name=self.name+'_Uz_init')
-        self.init_Ur = sharedX(value=np.zeros((hidden_size, hidden_size)), name=self.name+'_Ur_init')
-        self.init_Uh = sharedX(value=np.zeros((hidden_size, hidden_size)), name=self.name+'_Uh_init')
-
     @property
     def parameters(self):
         if self.fast_implementation:
@@ -199,20 +194,27 @@ class LayerGRU(object):
             return [self.W, self.b, self.U, self.Uh]
 
     def initialize(self, weights_initializer=OrthogonalInitializer(1234)):
-        weights_initializer(self.W)
+        # Initialize each input weights matrices separately.
+        Ws = []
+        for i in range(3):
+            shape = (self.input_size, self.hidden_size)
+            weights = weights_initializer._generate_array(shape)
+            Ws.append(weights)
+
+        self.W.set_value(np.concatenate(Ws, axis=1))
 
         # Initialize recurrence matrices separately.
-        weights_initializer(self.init_Uz)
-        weights_initializer(self.init_Ur)
+        Us = []
+        for i in range(3):
+            shape = (self.hidden_size, self.hidden_size)
+            weights = weights_initializer._generate_array(shape)
+            Us.append(weights)
 
         if self.fast_implementation:
-            weights_initializer(self.init_Uh)
-            U = np.concatenate([self.init_Uz.get_value(), self.init_Ur.get_value(), self.init_Uh.get_value()], axis=1)
+            self.U.set_value(np.concatenate(Us, axis=1))
         else:
-            weights_initializer(self.Uh)
-            U = np.concatenate([self.init_Uz.get_value(), self.init_Ur.get_value()], axis=1)
-
-        self.U.set_value(U)
+            self.U.set_value(np.concatenate(Us[:-1], axis=1))
+            self.Uh.set_value(Us[-1])
 
     def _compute_slice(self, no):
         if type(no) is str:
@@ -284,26 +286,28 @@ class LayerLSTM(object):
         # Concatenation of the biases in that order: bi, bo, bf, bm
         self.b = sharedX(value=np.zeros(4*hidden_size), name=self.name+'_b')
 
-        # Only used for initialization.
-        self.init_Ui = sharedX(value=np.zeros((hidden_size, hidden_size)), name=self.name+'_Ui_init')
-        self.init_Uo = sharedX(value=np.zeros((hidden_size, hidden_size)), name=self.name+'_Uo_init')
-        self.init_Uf = sharedX(value=np.zeros((hidden_size, hidden_size)), name=self.name+'_Uf_init')
-        self.init_Um = sharedX(value=np.zeros((hidden_size, hidden_size)), name=self.name+'_Um_init')
-
     @property
     def parameters(self):
         return [self.W, self.b, self.U]
 
     def initialize(self, weights_initializer=OrthogonalInitializer(1234)):
-        weights_initializer(self.W)
+        # Initialize each input weights matrices separately.
+        Ws = []
+        for i in range(4):
+            shape = (self.input_size, self.hidden_size)
+            weights = weights_initializer._generate_array(shape)
+            Ws.append(weights)
+
+        self.W.set_value(np.concatenate(Ws, axis=1))
 
         # Initialize recurrence matrices separately.
-        weights_initializer(self.init_Ui)
-        weights_initializer(self.init_Uo)
-        weights_initializer(self.init_Uf)
-        weights_initializer(self.init_Um)
-        U = np.concatenate([self.init_Ui.get_value(), self.init_Uo.get_value(), self.init_Uf.get_value(), self.init_Um.get_value()], axis=1)
-        self.U.set_value(U)
+        Us = []
+        for i in range(4):
+            shape = (self.hidden_size, self.hidden_size)
+            weights = weights_initializer._generate_array(shape)
+            Us.append(weights)
+
+        self.U.set_value(np.concatenate(Us, axis=1))
 
     def _compute_slice(self, no):
         if type(no) is str:
