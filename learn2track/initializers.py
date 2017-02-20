@@ -27,6 +27,12 @@ class HeInitializer(WeightInitializer):
     [He2015] Kaiming He et al. (2015): Delving deep into rectifiers: Surpassing
              human-level performance on imagenet classification. arXiv:1502.01852.
     """
+
+    def __call__(self, shared_var, gain=1.):
+        dim = shared_var.get_value().shape
+        shared_var.set_value(self._generate_array(dim, gain))
+        return shared_var
+
     def _generate_array(self, dim, gain=1.):
         fan_in = dim[0]
         std = gain * np.sqrt(1. / fan_in)
