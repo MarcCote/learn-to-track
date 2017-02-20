@@ -39,13 +39,11 @@ if __name__ == "__main__":
         raise ValueError("Only supporting TCK file at the moment.")
 
     tractometer_output = pjoin(args.output, tractogram_name)
-    try:
-        scoring_data = args.test_subject
-        gt_bundles_attributes_json = pjoin(scoring_data, 'gt_bundles_attributes.json')
-    except:
-        # For backward compatibility
-        scoring_data = pjoin(args.test_subject, 'scoring_data')
-        gt_bundles_attributes_json = pjoin(scoring_data, 'gt_bundles_attributes.json')
+    scoring_data = pjoin(args.test_subject, 'scoring_data')
+    if not os.path.isdir(scoring_data):
+        scoring_data = args.test_subject  # Already scoring_data folder
+
+    gt_bundles_attributes_json = pjoin(scoring_data, 'gt_bundles_attributes.json')
 
     # Create output folder, if needed.
     try:
