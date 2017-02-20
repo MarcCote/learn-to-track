@@ -5,6 +5,7 @@ from learn2track import factories
 
 from smartlearner.utils import sharedX
 import smartlearner.initializers as initer
+from learn2track.initializers import HeInitializer
 
 from learn2track.utils import l2distance
 
@@ -22,7 +23,11 @@ class LayerDense(object):
         self.b = sharedX(value=np.zeros(output_size), name=self.name+'_b')
 
     def initialize(self, weights_initializer=initer.UniformInitializer(1234)):
-        weights_initializer(self.W)
+        if isinstance(weights_initializer, HeInitializer):
+            gain = np.sqrt(2) if self.activation == 'hinge' else 1.
+            weights_initializer(self.W, gain=gain)
+        else:
+            weights_initializer(self.W)
 
     @property
     def parameters(self):

@@ -18,3 +18,16 @@ class OrthogonalInitializer(WeightInitializer):
         q = u if u.shape == flat_shape else v  # pick the one with the correct shape
         q = q.reshape(dim)
         return q[:dim[0], :dim[1]].astype(theano.config.floatX)
+
+class HeInitializer(WeightInitializer):
+    """ He weight initialization. (For relu)
+
+    References
+    ----------
+    [He2015] Kaiming He et al. (2015): Delving deep into rectifiers: Surpassing
+             human-level performance on imagenet classification. arXiv:1502.01852.
+    """
+    def _generate_array(self, dim, gain=1.):
+        fan_in = dim[0]
+        std = gain * np.sqrt(1. / fan_in)
+        return np.asarray(self.rng.normal(loc=0, scale=std, size=dim), dtype=theano.config.floatX)
