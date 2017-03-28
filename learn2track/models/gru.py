@@ -80,7 +80,7 @@ class GRU(Model):
         input = Xi
         for i, layer in enumerate(self.layers):
             last_h = args[i]
-            h = layer.fprop(input, last_h)
+            h = layer.fprop(X=input, last_h=last_h)
             layers_h.append(h)
             input = h
 
