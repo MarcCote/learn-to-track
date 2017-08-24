@@ -22,7 +22,7 @@ def buildArgsParser():
     p = argparse.ArgumentParser(description=description)
     p.add_argument('tractogram', help='tractogram file (.tck).')
     p.add_argument('test_subject',
-                   help='folder containing scoring_data (eg. "ismrm15_challenge/scoring_data/" or "hcp/subjects/100307/scoring_data/"')
+                   help='folder containing scoring data (eg. "ismrm15_challenge/scoring_data/" or "hcp/subjects/100307/scoring_data/"')
     p.add_argument('--output', default='tractometer',
                    help='folder that will contain tractometer output (eg. segmented bundles and scores). Default: %(default)s')
     p.add_argument('--ismrm-tractometer', action="store_true",
@@ -40,6 +40,9 @@ if __name__ == "__main__":
 
     tractometer_output = pjoin(args.output, tractogram_name)
     scoring_data = pjoin(args.test_subject, 'scoring_data')
+    if not os.path.isdir(scoring_data):
+        scoring_data = args.test_subject  # Already scoring_data folder
+
     gt_bundles_attributes_json = pjoin(scoring_data, 'gt_bundles_attributes.json')
 
     # Create output folder, if needed.
