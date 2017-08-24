@@ -749,6 +749,9 @@ def main():
         if hyperparams["model"] == "gru_regression":
             from learn2track.models import GRU_Regression
             model_class = GRU_Regression
+        elif hyperparams['model'] == 'gru_gaussian':
+            from learn2track.models import GRU_Gaussian
+            model_class = GRU_Gaussian
         elif hyperparams['model'] == 'gru_mixture':
             from learn2track.models import GRU_Mixture
             model_class = GRU_Mixture
@@ -932,20 +935,34 @@ def main():
             if args.dilate_mask:
                 mask_type += "D"
 
-            filename = "{}_seed-{}_mask-{}_step-{:.2f}mm_nbSeeds-{}_maxAngleDeg-{:.1f}_keepCurv-{}_filtered-{}_minLen-{}_pftRetry-{}_pftHist-{}_trackLikePeter-{}_useMaxComponent-{}.tck".format(
+            filename_items = ["{}_",
+                              # "seed-{}_",
+                              # "mask-{}_",
+                              "step-{:.2f}mm_",
+                              "nbSeeds-{}_",
+                              "maxAngleDeg-{:.1f}_"
+                              # "keepCurv-{}_",
+                              # "filtered-{}_",
+                              # "minLen-{}_",
+                              # "pftRetry-{}_",
+                              # "pftHist-{}_",
+                              # "trackLikePeter-{}_",
+                              # "useMaxComponent-{}"
+                              ]
+            filename = ('_'.join(filename_items) + ".tck").format(
                 prefix,
-                seed_mask_type,
-                mask_type,
+                # seed_mask_type,
+                # mask_type,
                 args.step_size,
                 args.nb_seeds_per_voxel,
-                np.rad2deg(theta),
-                not args.discard_stopped_by_curvature,
-                args.filter_threshold,
-                args.min_length,
-                args.pft_nb_retry,
-                args.pft_nb_backtrack_steps,
-                args.track_like_peter,
-                args.use_max_component
+                np.rad2deg(theta)
+                # not args.discard_stopped_by_curvature,
+                # args.filter_threshold,
+                # args.min_length,
+                # args.pft_nb_retry,
+                # args.pft_nb_backtrack_steps,
+                # args.track_like_peter,
+                # args.use_max_component
                 )
 
         save_path = pjoin(experiment_path, filename)

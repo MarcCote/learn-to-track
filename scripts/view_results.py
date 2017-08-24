@@ -3,24 +3,15 @@
 
 from __future__ import division
 
-import os
-import sys
-
-# Hack so you don't have to put the library containing this  script in the PYTHONPATH.
-sys.path = [os.path.abspath(os.path.join(__file__, '..', '..'))] + sys.path
-
-import numpy as np
 import argparse
 import csv
-import re
+import os
 import pickle
 from collections import OrderedDict
-# from texttable import Texttable
-
 from os.path import join as pjoin
 
+import numpy as np
 from smartlearner.utils import load_dict_from_json_file
-
 
 DESCRIPTION = 'Gather experiments results and save them in a CSV file.'
 
@@ -28,31 +19,30 @@ DESCRIPTION = 'Gather experiments results and save them in a CSV file.'
 def buildArgsParser():
     p = argparse.ArgumentParser(description=DESCRIPTION)
     p.add_argument('names', type=str, nargs='+', help='name/path of the experiments.')
-    p.add_argument('--tractography-names', type=str, nargs='+', help='name of the tractography scores results. Default: auto-detect')
     p.add_argument('--out', default="results.csv", help='save table in a CSV file. Default: results.csv')
     p.add_argument('-v', '--verbose', action="store_true", help='verbose mode')
     return p
 
 
 class Experiment(object):
-    def __init__(self, experiment_path, tractography_name):
-        self.description = tractography_name
-        self.experiment_path = experiment_path
-        self.name = os.path.basename(self.experiment_path)
-        # self.logger_file = pjoin(self.experiment_path, "logger.pkl")
+    def __init__(self, tractometer_path):  # , tractography_name):
+        self.tractometer_path = tractometer_path
+        self.tractogram_name = os.path.basename(tractometer_path)
+
+        self.experiment_path = os.path.normpath(pjoin(self.tractometer_path, "..", ".."))
+        self.experiment_name = os.path.basename(self.experiment_path)
+
         self.results_file = pjoin(self.experiment_path, "results.json")
-        self.tractometer_scores_file = pjoin(self.experiment_path, "tractometer", "scores", "{}.json".format(tractography_name))
+        self.tractometer_scores_file = pjoin(self.tractometer_path, "scores", "{}.json".format(self.tractogram_name))
         self.hyperparams_file = pjoin(self.experiment_path, "hyperparams.json")
-        # self.model_hyperparams_file = pjoin(self.experiment_path, "GRU_Regression", "hyperparams.json")
         self.status_file = pjoin(self.experiment_path, "training", "status.json")
-        self.early_stopping_file = pjoin(self.experiment_path, "training", "tasks", "early_stopping.json")
+        self.early_stopping_file = self._find_task("early_stopping")
 
         self.results = {}
         if os.path.isfile(self.results_file):
             self.results = load_dict_from_json_file(self.results_file)
 
         self.hyperparams = load_dict_from_json_file(self.hyperparams_file)
-        # self.model_hyperparams = load_dict_from_json_file(self.model_hyperparams_file)
         self.status = load_dict_from_json_file(self.status_file)
 
         self.tractometer_scores = {}
@@ -66,6 +56,19 @@ class Experiment(object):
         self.early_stopping = {}
         if os.path.isfile(self.early_stopping_file):
             self.early_stopping = load_dict_from_json_file(self.early_stopping_file)
+
+    def _find_task(self, task_name):
+        """ Search all task folders for task_name.json
+
+        :param task_name: (str) Name of the task
+        :return: (str) Path of the .json task file or None if not found
+        """
+        tasks_path = pjoin(self.experiment_path, "training", "tasks")
+        for task_folder in os.listdir(tasks_path):
+            file_path = pjoin(tasks_path, task_folder, task_name + ".json")
+            if os.path.isfile(file_path):
+                return file_path
+        return None
 
 
 def list_of_dict_to_csv_file(csv_file, list_of_dicts):
@@ -90,6 +93,13 @@ def get_optimizer(e):
 
     return ""
 
+def get_model(e):
+    model = e.hyperparams.get("model")
+    if model == "gru_mixture":
+        model += "_{}".format(e.hyperparams.get("n_gaussians"))
+    return model
+
+
 def extract_L2_error(results, dataset, metric):
     if dataset not in results:
         return ""
@@ -100,24 +110,30 @@ def extract_L2_error(results, dataset, metric):
 def extract_result_from_experiment(e):
     """e: `Experiment` object"""
     entry = OrderedDict()
+    entry["Model"] = get_model(e)
+    entry["Experiment"] = e.experiment_name[:6]
+    entry["Tractogram"] = e.tractogram_name
+    entry["Seed"] = e.hyperparams.get("seed", "")
+    entry["Model seed"] = e.hyperparams.get("initialization_seed", "")
     entry["Hidden Size(s)"] = "-".join(map(str, e.hyperparams.get("hidden_sizes", [])))
     entry["Feed previous direction"] = e.hyperparams.get("feed_previous_direction", "")
-    entry["Use sh coeff"] = e.hyperparams.get("use_sh_coeff", "")
-    entry["Optimizer"] = get_optimizer(e)
-    entry["Optimizer params"] = e.hyperparams.get(get_optimizer(e), "")
+    entry["Predict offset"] = e.hyperparams.get("predict_offset", "")
+    entry["Use layer normalization"] = e.hyperparams.get("use_layer_normalization", "")
+    entry["Use sh coeffs"] = e.hyperparams.get("use_sh_coeffs", "")
     entry["Noise sigma"] = e.hyperparams.get("noisy_streamlines_sigma", "")
-    entry["Clip Gradient"] = e.hyperparams.get("clip_gradient", "")
-    entry["Batch Size"] = e.hyperparams.get("batch_size", "")
-    entry["Weights Initialization"] = e.hyperparams.get("weights_initialization", "")
-    entry["Look Ahead"] = e.hyperparams.get("lookahead", "")
-    entry["Look Ahead eps"] = e.hyperparams.get("lookahead_eps", "")
+    entry["Drop prob"] = e.hyperparams.get("drop_prob", "")
+    entry["Zoneout"] = e.hyperparams.get("use_zoneout", "")
+    entry["Skip connections"] = e.hyperparams.get("skip_connections", "")
     entry["Best Epoch"] = e.early_stopping.get("best_epoch", "")
     entry["Max Epoch"] = e.status.get("current_epoch", "")
 
     # Results
-    entry["Train EV L2 error"] = extract_L2_error(e.results, "trainset_EV_L2_error", "mean")
-    entry["Valid EV L2 error"] = extract_L2_error(e.results, "validset_EV_L2_error", "mean")
-    entry["Test EV L2 error"] = extract_L2_error(e.results, "testset_EV_L2_error", "mean")
+    error_type = "EV_L2_error"
+    if e.hyperparams["model"] in ['gru_gaussian', 'gru_mixture', 'gru_multistep']:
+        error_type = "NLL"
+
+    entry["Train error"] = extract_L2_error(e.results, "trainset_{}".format(error_type), "mean")
+    entry["Valid error"] = extract_L2_error(e.results, "validset_{}".format(error_type), "mean")
 
     # Tractometer results
     entry["VC"] = str(e.tractometer_scores.get("VC", "0"))
@@ -126,16 +142,27 @@ def extract_result_from_experiment(e):
     entry["VB"] = str(e.tractometer_scores.get("VB", "0"))
     entry["IB"] = str(e.tractometer_scores.get("IB", "0"))
     entry["count"] = str(e.tractometer_scores.get("total_streamlines_count", ""))
-    entry["VCCR"] = ""
-    if len(e.tractometer_scores) > 0:
-        entry["VCCR"] = str(float(entry["VC"])/(float(entry["VC"])+float(entry["IC"])))
 
     overlap_per_bundle = e.tractometer_scores.get("overlap_per_bundle", {})
     overreach_per_bundle = e.tractometer_scores.get("overreach_per_bundle", {})
     entry["Avg. Overlap"] = str(np.mean(list(map(float, overlap_per_bundle.values()))))
     entry["Avg. Overreach"] = str(np.mean(list(map(float, overreach_per_bundle.values()))))
 
-    entry["Description"] = e.description
+    entry["VCCR"] = ""
+    if len(e.tractometer_scores) > 0:
+        try:
+            entry["VCCR"] = str(float(entry["VC"]) / (float(entry["VC"]) + float(entry["IC"])))
+        except ZeroDivisionError:
+            print("A ZeroDivisionError happened when computing VCCR: VC={}; IC={}".format(entry["VC"], entry["IC"]))
+
+    # Other hyperparameters
+    entry["Optimizer"] = get_optimizer(e)
+    entry["Optimizer params"] = e.hyperparams.get(get_optimizer(e), "")
+    entry["Clip Gradient"] = e.hyperparams.get("clip_gradient", "")
+    entry["Batch Size"] = e.hyperparams.get("batch_size", "")
+    entry["Weights Initialization"] = e.hyperparams.get("weights_initialization", "")
+    entry["Look Ahead"] = e.hyperparams.get("lookahead", "")
+    entry["Look Ahead eps"] = e.hyperparams.get("lookahead_eps", "")
 
     streamlines_per_bundle = e.tractometer_scores.get("streamlines_per_bundle", {})
     entry['CA'] = str(streamlines_per_bundle.get("CA", "0"))
@@ -165,15 +192,16 @@ def extract_result_from_experiment(e):
     entry['UF_right'] = str(streamlines_per_bundle.get("UF_right", "0"))
 
     # Other results
-    entry["Std. Train EV L2 error"] = extract_L2_error(e.results, "trainset_EV_L2_error", "stderror")
-    entry["Std. Valid EV L2 error"] = extract_L2_error(e.results, "validset_EV_L2_error", "stderror")
-    entry["Std. Test EV L2 error"] = extract_L2_error(e.results, "testset_EV_L2_error", "stderror")
+    entry["Test error"] = extract_L2_error(e.results, "testset_{}".format(error_type), "mean")
+    entry["Std. Train error"] = extract_L2_error(e.results, "trainset_{}".format(error_type), "stderror")
+    entry["Std. Valid error"] = extract_L2_error(e.results, "validset_{}".format(error_type), "stderror")
+    entry["Std. Test error"] = extract_L2_error(e.results, "testset_{}".format(error_type), "stderror")
     entry["Std. Overlap"] = str(np.std(list(map(float, overlap_per_bundle.values()))))
     entry["Std. Overreach"] = str(np.std(list(map(float, overreach_per_bundle.values()))))
 
     entry["Training Time"] = e.status.get("training_time", "")
     entry["Dataset"] = os.path.basename(e.hyperparams.get("dataset", ""))
-    entry["Experiment"] = e.name
+    entry["Experiment full name"] = e.experiment_name
 
     if "missing" in entry["Dataset"]:
         bundle_name = entry["Dataset"][:-4].split("_")[-1]
@@ -199,34 +227,33 @@ def main():
 
     experiments_results = []
 
-    tractography_names = args.tractography_names
-    if tractography_names is None:
-        tractography_names = set()
-        for experiment_path in args.names:
-            scores_dir = pjoin(experiment_path, "tractometer", "scores")
-
-            if not os.path.isdir(scores_dir):
-                continue
-
-            scores_files = [f[:-5] for f in os.listdir(scores_dir) if f.endswith(".json")]
-            tractography_names |= set(scores_files)
-
-        tractography_names = sorted(tractography_names)
-
-        if args.verbose:
-            print("Detected the following tractograms:")
-            print("  " + "\n  ".join(tractography_names))
-
     for experiment_path in args.names:
-        for tractography_name in tractography_names:
-            try:
-                experiment = Experiment(experiment_path, tractography_name)
-                experiments_results.append(extract_result_from_experiment(experiment))
-            except IOError as e:
-                if args.verbose:
-                    print(str(e))
+        tractometer_folder_path = pjoin(experiment_path, "tractometer")
+        try:
+            for tractometer_evaluation_name in os.listdir(tractometer_folder_path):
+                tractometer_evaluation_path = pjoin(tractometer_folder_path, tractometer_evaluation_name)
+                scores_dir = pjoin(tractometer_evaluation_path, "scores")
 
-                print("Skipping: '{}' for {}".format(experiment_path, tractography_name))
+                if not os.path.isdir(scores_dir):
+                    continue
+
+                try:
+                    experiment = Experiment(tractometer_evaluation_path)
+                    experiments_results.append(extract_result_from_experiment(experiment))
+                    if args.verbose:
+                        print("Fetched results for {}".format(tractometer_evaluation_name))
+                except IOError as e:
+                    if args.verbose:
+                        print(str(e))
+
+                    print("Skipping: '{}' for {}".format(experiment_path, tractometer_evaluation_name))
+        except FileNotFoundError:
+            try:
+                print("No tractometer results found, loading evaluation scores...")
+                experiment = Experiment(experiment_path)
+                experiments_results.append(extract_result_from_experiment(experiment))
+            except FileNotFoundError:
+                print("Could not load experiment results from {}".format(experiment_path))
 
     list_of_dict_to_csv_file(args.out, experiments_results)
 

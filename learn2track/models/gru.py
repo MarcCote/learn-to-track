@@ -19,7 +19,9 @@ class GRU(Model):
 
     The output is simply the state of the last hidden layer.
     """
-    def __init__(self, input_size, hidden_sizes, use_layer_normalization=False, drop_prob=0., use_zoneout=False, seed=1234):
+
+    def __init__(self, input_size, hidden_sizes, activation='tanh', use_layer_normalization=False, drop_prob=0., use_zoneout=False, use_skip_connections=False,
+                 seed=1234):
         """
         Parameters
         ----------
@@ -27,12 +29,16 @@ class GRU(Model):
             Number of units each element Xi in the input sequence X has.
         hidden_sizes : int, list of int
             Number of hidden units each GRU should have.
+        activation : str
+            Activation function to apply on the "cell candidate"
         use_layer_normalization : bool
             Use LayerNormalization to normalize preactivations and stabilize hidden layer evolution
         drop_prob : float
             Dropout/Zoneout probability for recurrent networks. See: https://arxiv.org/pdf/1512.05287.pdf & https://arxiv.org/pdf/1606.01305.pdf
         use_zoneout : bool
             Use zoneout implementation instead of dropout (a different zoneout mask will be use at each timestep)
+        use_skip_connections : bool
+            Use skip connections from the input to all hidden layers in the network, and from all hidden layers to the output layer
         seed : int
             Random seed used for dropout normalization
         """
@@ -41,9 +47,11 @@ class GRU(Model):
 
         self.input_size = input_size
         self.hidden_sizes = [hidden_sizes] if type(hidden_sizes) is int else hidden_sizes
+        self.activation = activation
         self.use_layer_normalization = use_layer_normalization
         self.drop_prob = drop_prob
         self.use_zoneout = use_zoneout
+        self.use_skip_connections = use_skip_connections
         self.seed = seed
         self.srng = MRG_RandomStreams(self.seed)
 
@@ -54,8 +62,8 @@ class GRU(Model):
         self.layers = []
         last_hidden_size = self.input_size
         for i, hidden_size in enumerate(self.hidden_sizes):
-            self.layers.append(layer_class(last_hidden_size, hidden_size, name="GRU{}".format(i)))
-            last_hidden_size = hidden_size
+            self.layers.append(layer_class(last_hidden_size, hidden_size, activation=activation, name="GRU{}".format(i)))
+            last_hidden_size = hidden_size + (input_size if self.use_skip_connections else 0)
 
         self.dropout_vectors = {}
         if self.drop_prob and not self.use_zoneout:
@@ -76,9 +84,11 @@ class GRU(Model):
         hyperparameters = {'version': 2,
                            'input_size': self.input_size,
                            'hidden_sizes': self.hidden_sizes,
+                           'activation': self.activation,
                            'use_layer_normalization': self.use_layer_normalization,
                            'drop_prob': self.drop_prob,
                            'use_zoneout': self.use_zoneout,
+                           'use_skip_connections': self.use_skip_connections,
                            'seed': self.seed}
 
         return hyperparameters
@@ -117,7 +127,10 @@ class GRU(Model):
             last_h = args[i]
             h = layer.fprop(input, last_h, drop_states, drop_value)
             layers_h.append(h)
-            input = h
+            if self.use_skip_connections:
+                input = T.concatenate([h, Xi], axis=-1)
+            else:
+                input = h
 
         return tuple(layers_h)
 

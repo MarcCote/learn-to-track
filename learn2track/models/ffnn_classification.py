@@ -15,7 +15,7 @@ class FFNN_Classification(FFNN):
     """ A standard FFNN model with a classification (sigmoid) layer stacked on top of it.
     """
 
-    def __init__(self, volume_manager, input_size, hidden_sizes, use_layer_normalization=False, **_):
+    def __init__(self, volume_manager, input_size, hidden_sizes, use_layer_normalization=False, use_skip_connections=False, **_):
         """
         Parameters
         ----------
@@ -27,12 +27,15 @@ class FFNN_Classification(FFNN):
             Number of hidden units each FFNN layer should have.
         use_layer_normalization : bool
             Use LayerNormalization to normalize preactivations
+        use_skip_connections : bool
+            Use skip connections from the input to all hidden layers in the network, and from all hidden layers to the output layer
         """
-        super().__init__(input_size, hidden_sizes, use_layer_normalization=use_layer_normalization)
+        super().__init__(input_size, hidden_sizes, use_layer_normalization=use_layer_normalization, use_skip_connections=use_skip_connections)
         self.volume_manager = volume_manager
         self.output_size = 1  # Positive class probability
 
-        self.layer_classification = LayerDense(self.hidden_sizes[-1], self.output_size, activation="sigmoid")
+        output_layer_input_size = sum(self.hidden_sizes) if self.use_skip_connections else self.hidden_sizes[-1]
+        self.layer_classification = LayerDense(output_layer_input_size, self.output_size, activation="sigmoid")
 
     def initialize(self, weights_initializer=initer.UniformInitializer(1234)):
         super().initialize(weights_initializer)
@@ -63,7 +66,8 @@ class FFNN_Classification(FFNN):
         layer_outputs = super()._fprop(data_at_coords)
 
         # Compute positive class probability
-        classification_out = self.layer_classification.fprop(layer_outputs[-1])
+        output_layer_input = T.concatenate(layer_outputs, axis=-1) if self.use_skip_connections else layer_outputs[-1]
+        classification_out = self.layer_classification.fprop(output_layer_input)
 
         # Remove single-dimension from shape
         classification_out = classification_out[:, 0]

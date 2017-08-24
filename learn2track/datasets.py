@@ -199,7 +199,7 @@ class TractographyDataset(MaskedSequenceDataset):
         return self.streamlines[idx], self.streamline_id_to_volume_id[idx]
 
 
-def load_tractography_dataset(subject_files, volume_manager, name="HCP", use_sh_coeffs=False):
+def load_tractography_dataset(subject_files, volume_manager, name="HCP", use_sh_coeffs=False, mean_centering=True):
     subjects = []
     with Timer("  Loading subject(s)", newline=True):
         for subject_file in sorted(subject_files):
@@ -211,10 +211,10 @@ def load_tractography_dataset(subject_files, volume_manager, name="HCP", use_sh_
             bvecs = tracto_data.gradients.bvecs
             if use_sh_coeffs:
                 # Use 45 spherical harmonic coefficients to represent the diffusion signal.
-                volume = neurotools.get_spherical_harmonics_coefficients(dwi, bvals, bvecs).astype(np.float32)
+                volume = neurotools.get_spherical_harmonics_coefficients(dwi, bvals, bvecs, mean_centering=mean_centering).astype(np.float32)
             else:
                 # Resample the diffusion signal to have 100 directions.
-                volume = neurotools.resample_dwi(dwi, bvals, bvecs).astype(np.float32)
+                volume = neurotools.resample_dwi(dwi, bvals, bvecs, mean_centering=mean_centering).astype(np.float32)
 
             tracto_data.signal.uncache()  # Free some memory as we don't need the original signal.
             subject_id = volume_manager.register(volume)
@@ -224,7 +224,7 @@ def load_tractography_dataset(subject_files, volume_manager, name="HCP", use_sh_
     return TractographyDataset(subjects, name, keep_on_cpu=True)
 
 
-def load_tractography_dataset_from_dwi_and_tractogram(dwi, tractogram, volume_manager, use_sh_coeffs=False, bvals=None, bvecs=None, step_size=None):
+def load_tractography_dataset_from_dwi_and_tractogram(dwi, tractogram, volume_manager, use_sh_coeffs=False, bvals=None, bvecs=None, step_size=None, mean_centering=True):
     # Load signal
     signal = nib.load(dwi)
     signal.get_data()  # Forces loading volume in-memory.
@@ -263,10 +263,10 @@ def load_tractography_dataset_from_dwi_and_tractogram(dwi, tractogram, volume_ma
 
     if use_sh_coeffs:
         # Use 45 spherical harmonic coefficients to represent the diffusion signal.
-        volume = neurotools.get_spherical_harmonics_coefficients(dwi, bvals, bvecs).astype(np.float32)
+        volume = neurotools.get_spherical_harmonics_coefficients(dwi, bvals, bvecs, mean_centering=mean_centering).astype(np.float32)
     else:
         # Resample the diffusion signal to have 100 directions.
-        volume = neurotools.resample_dwi(dwi, bvals, bvecs).astype(np.float32)
+        volume = neurotools.resample_dwi(dwi, bvals, bvecs, mean_centering=mean_centering).astype(np.float32)
 
     tracto_data.signal.uncache()  # Free some memory as we don't need the original signal.
     subject_id = volume_manager.register(volume)

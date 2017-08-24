@@ -20,7 +20,7 @@ class FFNN(Model):
     The output is simply the state of the last hidden layer.
     """
 
-    def __init__(self, input_size, hidden_sizes, activation='tanh', use_layer_normalization=False, dropout_prob=0., seed=1234):
+    def __init__(self, input_size, hidden_sizes, activation='tanh', use_layer_normalization=False, dropout_prob=0., use_skip_connections=False, seed=1234):
         """
         Parameters
         ----------
@@ -34,6 +34,8 @@ class FFNN(Model):
             Use LayerNormalization to normalize preactivations
         dropout_prob : float
             Dropout probability for recurrent networks. See: https://arxiv.org/pdf/1512.05287.pdf
+        use_skip_connections : bool
+            Use skip connections from the input to all hidden layers in the network, and from all hidden layers to the output layer
         seed : int
             Random seed used for dropout normalization
         """
@@ -45,6 +47,7 @@ class FFNN(Model):
         self.activation = activation
         self.use_layer_normalization = use_layer_normalization
         self.dropout_prob = dropout_prob
+        self.use_skip_connections = use_skip_connections
         self.seed = seed
         self.srng = MRG_RandomStreams(self.seed)
 
@@ -80,6 +83,7 @@ class FFNN(Model):
                            'activation': self.activation,
                            'use_layer_normalization': self.use_layer_normalization,
                            'dropout_prob': self.dropout_prob,
+                           'use_skip_connections': self.use_skip_connections,
                            'seed': self.seed}
 
         return hyperparameters
@@ -108,7 +112,10 @@ class FFNN(Model):
             dropout_W = self.dropout_vectors[layer.name] if self.dropout_prob else None
             layer_output = layer.fprop(next_input, dropout_W)
             layers_h.append(layer_output)
-            next_input = layer_output
+            if self.use_skip_connections:
+                next_input = T.concatenate([layer_output, Xi], axis=-1)
+            else:
+                next_input = layer_output
 
         return tuple(layers_h)
 

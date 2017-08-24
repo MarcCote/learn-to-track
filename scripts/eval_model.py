@@ -83,6 +83,9 @@ def main():
         if hyperparams['model'] == 'gru_regression':
             from learn2track.models import GRU_Regression
             model = GRU_Regression.create(experiment_path, volume_manager=volume_manager)
+        elif hyperparams['model'] == 'gru_gaussian':
+            from learn2track.models import GRU_Gaussian
+            model = GRU_Gaussian.create(experiment_path, volume_manager=volume_manager)
         elif hyperparams['model'] == 'gru_mixture':
             from learn2track.models import GRU_Mixture
             model = GRU_Mixture.create(experiment_path, volume_manager=volume_manager)
@@ -119,7 +122,7 @@ def main():
             tag = "_EV_L2_error"
         elif args.loss_type == 'maximum_component':
             tag = "_MC_L2_error"
-        elif hyperparams['model'] == 'gru_mixture' or hyperparams['model'] == 'gru_multistep':
+        elif hyperparams['model'] in ['gru_gaussian', 'gru_mixture', 'gru_multistep']:
             tag = "_NLL"
 
         entry = args.dataset_name + tag

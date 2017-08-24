@@ -11,12 +11,12 @@ from learn2track.utils import logsumexp, softmax, l2distance
 floatX = theano.config.floatX
 
 
-class GRU_Mixture(GRU_Regression):
-    """ A GRU_Regression model with the output size computed for a mixture of gaussians, using a diagonal covariance matrix
+class GRU_Gaussian(GRU_Regression):
+    """ A GRU_Regression model with the output size computed for a gaussian distribution, using a diagonal covariance matrix
     """
 
-    def __init__(self, volume_manager, input_size, hidden_sizes, output_size, n_gaussians, activation='tanh', use_previous_direction=False,
-                 use_layer_normalization=False, drop_prob=0., use_zoneout=False, use_skip_connections=False, seed=1234, **_):
+    def __init__(self, volume_manager, input_size, hidden_sizes, output_size, use_previous_direction=False, use_layer_normalization=False, drop_prob=0.,
+                 use_zoneout=False, use_skip_connections=False, seed=1234, **_):
         """
         Parameters
         ----------
@@ -28,10 +28,6 @@ class GRU_Mixture(GRU_Regression):
             Number of hidden units each GRU should have.
         output_size : int
             Number of units the regression layer should have.
-        n_gaussians : int
-            Number of gaussians in the mixture
-        activation : str
-            Activation function to apply on the "cell candidate"
         use_previous_direction : bool
             Use the previous direction as an additional input
         use_layer_normalization : bool
@@ -45,69 +41,52 @@ class GRU_Mixture(GRU_Regression):
         seed : int
             Random seed used for dropout normalization
         """
-        super(GRU_Regression, self).__init__(input_size, hidden_sizes, activation=activation, use_layer_normalization=use_layer_normalization,
-                                             drop_prob=drop_prob, use_zoneout=use_zoneout, use_skip_connections=use_skip_connections, seed=seed)
+        super(GRU_Regression, self).__init__(input_size, hidden_sizes, use_layer_normalization=use_layer_normalization, drop_prob=drop_prob,
+                                             use_zoneout=use_zoneout, use_skip_connections=use_skip_connections, seed=seed)
         self.volume_manager = volume_manager
-        self.n_gaussians = n_gaussians
 
         assert output_size == 3  # Only 3-dimensional target is supported for now
         self.output_size = output_size
 
         self.use_previous_direction = use_previous_direction
 
-        # GRU_Mixture does not predict a direction, so it cannot predict an offset
+        # GRU_Gaussian does not predict a direction, so it cannot predict an offset
         self.predict_offset = False
 
         # Do not use dropout/zoneout in last hidden layer
-        self.layer_regression_size = sum([n_gaussians,  # Mixture weights
-                                          n_gaussians * output_size,  # Means
-                                          n_gaussians * output_size])  # Stds
+        self.layer_regression_size = sum([output_size,  # Means
+                                          output_size])  # Stds
         output_layer_input_size = sum(self.hidden_sizes) if self.use_skip_connections else self.hidden_sizes[-1]
         self.layer_regression = LayerRegression(output_layer_input_size, self.layer_regression_size)
 
     @property
     def hyperparameters(self):
         hyperparameters = super().hyperparameters
-        hyperparameters['n_gaussians'] = self.n_gaussians
         hyperparameters['layer_regression_size'] = self.layer_regression_size
         hyperparameters['use_previous_direction'] = self.use_previous_direction
         return hyperparameters
 
-    def get_mixture_parameters(self, regression_output, ndim=3):
-        shape_split_by_gaussian = T.concatenate([regression_output.shape[:-1], [self.n_gaussians, 3]])
-        mixture_weights = softmax(regression_output[..., :self.n_gaussians], axis=-1)
-        means = T.reshape(regression_output[..., self.n_gaussians:self.n_gaussians * 4], shape_split_by_gaussian, ndim=ndim)
-        stds = T.reshape(T.exp(regression_output[..., self.n_gaussians * 4:self.n_gaussians * 7]), shape_split_by_gaussian, ndim=ndim)
+    @staticmethod
+    def get_distribution_parameters(regression_output):
+        mu = regression_output[..., :3]
+        sigma = T.exp(regression_output[..., 3:])
+        return mu, sigma
 
-        return mixture_weights, means, stds
-
-    def _get_stochastic_samples(self, srng, mixture_weights, means, stds):
-        batch_size = mixture_weights.shape[0]
-        xs = T.arange(0, batch_size)
-
-        choices = T.argmax(srng.multinomial(n=1, pvals=mixture_weights), axis=1)
-
-        # means[0] : [[mean_x1, mean_y1, mean_z1], ..., [mean_xn, mean_yn, mean_zn]]
+    @staticmethod
+    def _get_stochastic_samples(srng, mu, sigma):
+        batch_size = mu.shape[0]
 
         # mu.shape : (batch_size, 3)
-        mu = means[xs, choices]
-
         # sigma.shape : (batch_size, 3)
-        sigma = stds[xs, choices]
 
         noise = srng.normal((batch_size, 3))
         samples = mu + sigma * noise
 
         return samples
 
-    def _get_max_component_samples(self, mixture_weights, means, stds):
-        batch_size = mixture_weights.shape[0]
-        xs = T.arange(0, batch_size)
-
-        choices = T.argmax(mixture_weights, axis=1)
-        samples = means[xs, choices]
-
-        return samples
+    @staticmethod
+    def _get_max_component_samples(mu, _):
+        return mu
 
     def make_sequence_generator(self, subject_id=0, use_max_component=False):
         """ Makes functions that return the prediction for x_{t+1} for every
@@ -117,6 +96,8 @@ class GRU_Mixture(GRU_Regression):
         ----------
         subject_id : int, optional
             ID of the subject from which its diffusion data will be used. Default: 0.
+        use_max_component : bool, optional
+            Use the maximum of the probability distribution instead of sampling values
         """
 
         # Build the sequence generator as a theano function.
@@ -132,13 +113,13 @@ class GRU_Mixture(GRU_Regression):
 
         # regression_output.shape : (batch_size, target_size)
         regression_output = new_states[-1]
-        mixture_params = self.get_mixture_parameters(regression_output, ndim=3)
+        distribution_params = self.get_distribution_parameters(regression_output)
 
         if use_max_component:
-            predictions = self._get_max_component_samples(*mixture_params)
+            predictions = self._get_max_component_samples(*distribution_params)
         else:
             srng = MRG_RandomStreams(1234)
-            predictions = self._get_stochastic_samples(srng, *mixture_params)
+            predictions = self._get_stochastic_samples(srng, *distribution_params)
 
         f = theano.function(inputs=[symb_x_t] + states_h,
                             outputs=[predictions] + list(new_states_h))
@@ -161,7 +142,7 @@ class GRU_Mixture(GRU_Regression):
             -------
             next_x_t : ndarray with shape (batch_size, 3)
                 Directions to follow.
-            new_states : list of 2D array of shape (batch_size, hidden_size)
+            next_states : list of 2D array of shape (batch_size, hidden_size)
                 Updated states of the network after seeing x_t.
             """
             # Append the DWI ID of each sequence after the 3D coordinates.
@@ -174,19 +155,18 @@ class GRU_Mixture(GRU_Regression):
 
             results = f(x_t, *states)
             next_x_t = results[0]
-            new_states = results[1:]
-            return next_x_t, new_states
+            next_states = results[1:]
+            return next_x_t, next_states
 
         return _gen
 
 
-class MultivariateGaussianMixtureNLL(Loss):
-    """ Computes the likelihood of a multivariate gaussian mixture
+class GaussianNLL(Loss):
+    """ Computes the negative log likelihood of a gaussian
     """
 
     def __init__(self, model, dataset, sum_over_timestep=False):
         super().__init__(model, dataset)
-        self.n = model.n_gaussians
         self.d = model.output_size
         self.sum_over_timestep = sum_over_timestep
 
@@ -199,19 +179,17 @@ class MultivariateGaussianMixtureNLL(Loss):
         # regression_outputs.shape = (batch_size, seq_length, regression_layer_size)
         regression_outputs = model_output
 
-        # mixture_weights.shape : (batch_size, seq_len, n_gaussians)
-        # means.shape : (batch_size, seq_len, n_gaussians, 3)
-        # stds.shape : (batch_size, seq_len, n_gaussians, 3)
-        mixture_weights, means, stds = self.model.get_mixture_parameters(regression_outputs, ndim=4)
+        # mu.shape : (batch_size, seq_len, 3)
+        # sigma.shape : (batch_size, seq_len, 3)
+        mu, sigma = self.model.get_distribution_parameters(regression_outputs)
 
-        # targets.shape : (batch_size, seq_len, 1, 3)
-        targets = self.dataset.symb_targets[:, :, None, :]
+        # targets.shape : (batch_size, seq_len, 3)
+        targets = self.dataset.symb_targets
 
-        log_prefix = -2 * T.log(mixture_weights) + self.d * np.float32(np.log(2*np.pi)) + 2 * T.sum(T.log(stds), axis=-1)
-        square_mahalanobis_dist = T.sum(T.square((targets - means) / stds), axis=-1)
+        square_mahalanobis_dist = T.sum(T.square((targets - mu) / sigma), axis=-1)
 
         # loss_per_timestep.shape : (batch_size, seq_len)
-        self.loss_per_time_step = -logsumexp(-0.5 * (log_prefix + square_mahalanobis_dist), axis=2)
+        self.loss_per_time_step = 0.5 * (self.d * np.float32(np.log(2 * np.pi)) + 2 * T.sum(T.log(sigma), axis=-1) + square_mahalanobis_dist)
 
         # loss_per_seq.shape : (batch_size,)
         # loss_per_seq is the log probability for each sequence
@@ -224,13 +202,12 @@ class MultivariateGaussianMixtureNLL(Loss):
         return self.loss_per_seq
 
 
-class MultivariateGaussianMixtureExpectedValueL2Distance(Loss):
-    """ Computes the L2 distance for the expected value samples of a multivariate gaussian mixture
+class GaussianExpectedValueL2Distance(Loss):
+    """ Computes the L2 distance between the target and the expected value of a gaussian distribution
     """
 
     def __init__(self, model, dataset):
         super().__init__(model, dataset)
-        self.n = model.n_gaussians
         self.d = model.output_size
 
     def _get_updates(self):
@@ -242,53 +219,19 @@ class MultivariateGaussianMixtureExpectedValueL2Distance(Loss):
         # regression_outputs.shape = (batch_size, seq_length, regression_layer_size)
         regression_outputs = model_output
 
-        mixture_weights, means, stds = self.model.get_mixture_parameters(regression_outputs, ndim=4)
+        # mu.shape : (batch_size, seq_len, 3)
+        # sigma.shape : (batch_size, seq_len, 3)
+        mu, sigma = self.model.get_distribution_parameters(regression_outputs)
 
-        # mixture_weights.shape : (batch_size, seq_len, n_gaussians)
-        # means.shape : (batch_size, seq_len, n_gaussians, 3)
-
-        # samples.shape : (batch_size, seq_len, 3)
-        self.samples = T.sum(mixture_weights[:, :, :, None] * means, axis=2)
-
-        # loss_per_time_step.shape = (batch_size, seq_len)
-        self.loss_per_time_step = l2distance(self.samples, self.dataset.symb_targets)
-        # loss_per_seq.shape = (batch_size,)
-        self.loss_per_seq = T.sum(self.loss_per_time_step*mask, axis=1) / T.sum(mask, axis=1)
-
-        return self.loss_per_seq
-
-
-class MultivariateGaussianMixtureMaxComponentL2Distance(Loss):
-    """ Computes the L2 distance for the max component samples of a multivariate gaussian mixture
-    """
-
-    def __init__(self, model, dataset):
-        super().__init__(model, dataset)
-        self.n = model.n_gaussians
-        self.d = model.output_size
-
-    def _get_updates(self):
-        return {}  # There is no updates for L2Distance.
-
-    def _compute_losses(self, model_output):
-        mask = self.dataset.symb_mask
-
-        # regression_outputs.shape = (batch_size, seq_length, regression_layer_size)
-        regression_outputs = model_output
-
-        # mixture_weights.shape : (batch_size, seq_len, n_gaussians)
-        # means.shape : (batch_size, seq_len, n_gaussians, 3)
-        mixture_weights, means, stds = self.model.get_mixture_parameters(regression_outputs, ndim=4)
-        maximum_component_ids = T.argmax(mixture_weights, axis=2)
+        # targets.shape : (batch_size, seq_len, 3)
+        targets = self.dataset.symb_targets
 
         # samples.shape : (batch_size, seq_len, 3)
-        self.samples = means[(T.arange(mixture_weights.shape[0])[:, None]),
-                             (T.arange(mixture_weights.shape[1])[None, :]),
-                             maximum_component_ids]
+        self.samples = mu
 
         # loss_per_time_step.shape = (batch_size, seq_len)
-        self.loss_per_time_step = l2distance(self.samples, self.dataset.symb_targets)
+        self.loss_per_time_step = l2distance(self.samples, targets)
         # loss_per_seq.shape = (batch_size,)
-        self.loss_per_seq = T.sum(self.loss_per_time_step*mask, axis=1) / T.sum(mask, axis=1)
+        self.loss_per_seq = T.sum(self.loss_per_time_step * mask, axis=1) / T.sum(mask, axis=1)
 
         return self.loss_per_seq

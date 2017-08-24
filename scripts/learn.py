@@ -27,7 +27,6 @@ from learn2track.factories import model_factory
 from learn2track.factories import loss_factory
 
 from learn2track import datasets
-from learn2track.batch_schedulers import TractographyBatchScheduler
 from learn2track.neurotools import VolumeManager
 
 
@@ -36,18 +35,18 @@ def build_train_gru_argparser(subparser):
 
     p = subparser.add_parser("gru_regression", description=DESCRIPTION, help=DESCRIPTION)
 
-    # p.add_argument('dataset', type=str, help='folder containing training data (.npz files).')
-
     # Model options (GRU)
     model = p.add_argument_group("GRU arguments")
 
     model.add_argument('--hidden-sizes', type=int, nargs='+', default=500,
                        help="Size of the hidden layers. Default: 500")
+    model.add_argument('-a', '--activation', type=str, default='tanh', choices=ACTIVATION_FUNCTIONS,
+                       help='which type of activation function to use for hidden layers.'.format(", ".join(ACTIVATION_FUNCTIONS)))
 
     model.add_argument('--weights-initialization', type=str, default='orthogonal', choices=WEIGHTS_INITIALIZERS,
                        help='which type of initialization to use when creating weights [{0}].'.format(", ".join(WEIGHTS_INITIALIZERS)))
-    model.add_argument('--initialization-seed', type=int, default=1234,
-                       help='seed used to generate random numbers. Default=1234')
+    model.add_argument('--initialization-seed', type=int, default=np.random.randint(0, 999999),
+                       help='seed used to generate random numbers. Default=random')
 
     model.add_argument('--learn-to-stop', action="store_true",
                        help='if specified, the model will be trained to learn when to stop tracking')
@@ -65,6 +64,10 @@ def build_train_gru_argparser(subparser):
     model.add_argument('--use-layer-normalization', action="store_true",
                        help='if specified, the model will be use LayerNormalization in the hidden layers')
 
+    model.add_argument('--skip-connections', action="store_true",
+                       help='if specified, the model will use skip connections from the input to all hidden layers in the network, '
+                            'and from all hidden layers to the output layer')
+
     model.add_argument('-d', '--drop-prob', type=float, default=0., help='Dropout/Zoneout probability. Default: 0')
     model.add_argument('--use-zoneout', action="store_true", help='if specified, the model will be use Zoneout instead of Dropout')
 
@@ -80,20 +83,20 @@ def build_train_gru_mixture_argparser(subparser):
 
     p = subparser.add_parser("gru_mixture", description=DESCRIPTION, help=DESCRIPTION)
 
-    # p.add_argument('dataset', type=str, help='folder containing training data (.npz files).')
-
     # Model options (GRU)
     model = p.add_argument_group("GRU arguments")
 
     model.add_argument('--hidden-sizes', type=int, nargs='+', default=500,
                        help="Size of the hidden layers. Default: 500")
+    model.add_argument('-a', '--activation', type=str, default='tanh', choices=ACTIVATION_FUNCTIONS,
+                       help='which type of activation function to use for hidden layers.'.format(", ".join(ACTIVATION_FUNCTIONS)))
 
     model.add_argument('-n', '--n-gaussians', type=int, default=2, help='Number of gaussians in the mixture. Default: 2')
 
     model.add_argument('--weights-initialization', type=str, default='orthogonal', choices=WEIGHTS_INITIALIZERS,
                        help='which type of initialization to use when creating weights [{0}].'.format(", ".join(WEIGHTS_INITIALIZERS)))
-    model.add_argument('--initialization-seed', type=int, default=1234,
-                       help='seed used to generate random numbers. Default=1234')
+    model.add_argument('--initialization-seed', type=int, default=np.random.randint(0, 999999),
+                       help='seed used to generate random numbers. Default=random')
 
     model.add_argument('--normalize', action="store_true", help='if specified, model will be trained against unit length targets')
 
@@ -102,6 +105,47 @@ def build_train_gru_mixture_argparser(subparser):
 
     model.add_argument('--use-layer-normalization', action="store_true",
                        help='if specified, the model will be use LayerNormalization in the hidden layers')
+
+    model.add_argument('--skip-connections', action="store_true",
+                       help='if specified, the model will use skip connections from the input to all hidden layers in the network, '
+                            'and from all hidden layers to the output layer')
+
+    model.add_argument('-d', '--drop-prob', type=float, default=0., help='Dropout/Zoneout probability. Default: 0')
+    model.add_argument('--use-zoneout', action="store_true", help='if specified, the model will be use Zoneout instead of Dropout')
+
+    # General parameters (optional)
+    general = p.add_argument_group("General arguments")
+    general.add_argument('-f', '--force', action='store_true', help='restart training from scratch instead of resuming.')
+    general.add_argument('--view', action='store_true', help='display learning curves.')
+
+
+def build_train_gru_gaussian_argparser(subparser):
+    DESCRIPTION = "Train a gaussian GRU."
+
+    p = subparser.add_parser("gru_gaussian", description=DESCRIPTION, help=DESCRIPTION)
+
+    # Model options (GRU)
+    model = p.add_argument_group("GRU arguments")
+
+    model.add_argument('--hidden-sizes', type=int, nargs='+', default=500,
+                       help="Size of the hidden layers. Default: 500")
+
+    model.add_argument('--weights-initialization', type=str, default='orthogonal', choices=WEIGHTS_INITIALIZERS,
+                       help='which type of initialization to use when creating weights [{0}].'.format(", ".join(WEIGHTS_INITIALIZERS)))
+    model.add_argument('--initialization-seed', type=int, default=np.random.randint(0, 999999),
+                       help='seed used to generate random numbers. Default=random')
+
+    model.add_argument('--normalize', action="store_true", help='if specified, model will be trained against unit length targets')
+
+    model.add_argument('--feed-previous-direction', action="store_true",
+                       help='if specified, the model will be given the previous direction as an additional input')
+
+    model.add_argument('--use-layer-normalization', action="store_true",
+                       help='if specified, the model will be use LayerNormalization in the hidden layers')
+
+    model.add_argument('--skip-connections', action="store_true",
+                       help='if specified, the model will use skip connections from the input to all hidden layers in the network, '
+                            'and from all hidden layers to the output layer')
 
     model.add_argument('-d', '--drop-prob', type=float, default=0., help='Dropout/Zoneout probability. Default: 0')
     model.add_argument('--use-zoneout', action="store_true", help='if specified, the model will be use Zoneout instead of Dropout')
@@ -133,8 +177,8 @@ def build_train_gru_multistep_argparser(subparser):
 
     model.add_argument('--weights-initialization', type=str, default='orthogonal', choices=WEIGHTS_INITIALIZERS,
                        help='which type of initialization to use when creating weights [{0}].'.format(", ".join(WEIGHTS_INITIALIZERS)))
-    model.add_argument('--initialization-seed', type=int, default=1234,
-                       help='seed used to generate random numbers. Default=1234')
+    model.add_argument('--initialization-seed', type=int, default=np.random.randint(0, 999999),
+                       help='seed used to generate random numbers. Default=random')
 
     model.add_argument('--use-layer-normalization', action="store_true",
                        help='if specified, the model will be use LayerNormalization in the hidden layers')
@@ -159,13 +203,13 @@ def build_train_ffnn_regression_argparser(subparser):
     model.add_argument('--hidden-sizes', type=int, nargs='+', default=500,
                        help="Size of the hidden layers. Default: 500")
 
-    model.add_argument('--activation', type=str, default='tanh', choices=ACTIVATION_FUNCTIONS,
+    model.add_argument('-a', '--activation', type=str, default='tanh', choices=ACTIVATION_FUNCTIONS,
                        help='which type of activation function to use for hidden layers.'.format(", ".join(ACTIVATION_FUNCTIONS)))
 
     model.add_argument('--weights-initialization', type=str, default='orthogonal', choices=WEIGHTS_INITIALIZERS,
                        help='which type of initialization to use when creating weights [{0}].'.format(", ".join(WEIGHTS_INITIALIZERS)))
-    model.add_argument('--initialization-seed', type=int, default=1234,
-                       help='seed used to generate random numbers. Default=1234')
+    model.add_argument('--initialization-seed', type=int, default=np.random.randint(0, 999999),
+                       help='seed used to generate random numbers. Default=random')
 
     model.add_argument('--learn-to-stop', action="store_true",
                        help='if specified, the model will be trained to learn when to stop tracking')
@@ -182,6 +226,10 @@ def build_train_ffnn_regression_argparser(subparser):
 
     model.add_argument('--use-layer-normalization', action="store_true",
                        help='if specified, the model will be use LayerNormalization in the hidden layers')
+
+    model.add_argument('--skip-connections', action="store_true",
+                       help='if specified, the model will use skip connections from the input to all hidden layers in the network, '
+                            'and from all hidden layers to the output layer')
 
     model.add_argument('-d', '--drop-prob', type=float, default=0., help='Dropout probability. Default: 0')
 
@@ -217,14 +265,12 @@ def build_argparser():
     training = p.add_argument_group("Training options")
     training.add_argument('--batch-size', type=int,
                           help='size of the batch to use when training the model. Default: 100.', default=100)
-    # training.add_argument('--neighborhood-patch', type=int, metavar='N',
-    #                       help='if specified, patch (as a cube, i.e. NxNxN) around each streamlines coordinates will be concatenated to the input.')
     training.add_argument('--noisy-streamlines-sigma', type=float,
                           help='if specified, it is the standard deviation of the gaussian noise added independently to every point of every streamlines at each batch.')
     training.add_argument('--clip-gradient', type=float,
                           help='if provided, gradient norms will be clipped to this value (if it exceeds it).')
-    training.add_argument('--seed', type=int, default=1234,
-                          help='seed used to generate random numbers in the batch scheduler. Default=1234')
+    training.add_argument('--seed', type=int, default=np.random.randint(0, 999999),
+                          help='seed used to generate random numbers in the batch scheduler. Default=random')
     training.add_argument('--keep-step-size', action="store_true",
                           help='if specified, training streamlines will not be resampled between batches (streamlines will keep their original step size)')
     training.add_argument('--sort-streamlines', action="store_true",
@@ -250,53 +296,12 @@ def build_argparser():
     subparser = p.add_subparsers(title="Models", dest="model")
     subparser.required = True   # force 'required' testing
     build_train_gru_argparser(subparser)
+    build_train_gru_gaussian_argparser(subparser)
     build_train_gru_mixture_argparser(subparser)
     build_train_gru_multistep_argparser(subparser)
     build_train_ffnn_regression_argparser(subparser)
 
     return p
-
-
-def tsne_view(trainset, volume_manager):
-
-    batch_scheduler = TractographyBatchScheduler(trainset,
-                                                 batch_size=20000,
-                                                 noisy_streamlines_sigma=False,
-                                                 seed=1234,
-                                                 normalize_target=True)
-    rng = np.random.RandomState(42)
-    rng.shuffle(batch_scheduler.indices)
-
-    bundle_name_pattern = "CST_Left"
-    # batch_inputs, batch_targets, batch_mask = batch_scheduler._prepare_batch(trainset.get_bundle(bundle_name_pattern, return_idx=True))
-    inputs, targets, mask = batch_scheduler._next_batch(3)
-    mask = mask.astype(bool)
-    idx = np.arange(mask.sum())
-    rng.shuffle(idx)
-
-    coords = T.matrix('coords')
-    eval_at_coords = theano.function([coords], volume_manager.eval_at_coords(coords))
-
-    M = 2000 * len(trainset.subjects)
-    coords = inputs[mask][idx[:M]]
-    X = eval_at_coords(coords)
-
-    from sklearn.manifold.t_sne import TSNE
-    tsne = TSNE(n_components=2, verbose=2, random_state=42)
-    Y = tsne.fit_transform(X)
-
-    import matplotlib.pyplot as plt
-    plt.figure()
-    ids = range(len(trainset.subjects))
-    markers = ['s', 'o', '^', 'v', '<', '>', 'h']
-    colors = ['cyan', 'darkorange', 'darkgreen', 'magenta', 'pink', 'k']
-    for i, marker, color in zip(ids, markers, colors):
-        idx = coords[:, -1] == i
-        print("Subject #{}: ".format(i), idx.sum())
-        plt.scatter(Y[idx, 0], Y[idx, 1], 20, color=color, marker=marker, label="Subject #{}".format(i))
-
-    plt.legend()
-    plt.show()
 
 
 def main():
@@ -314,7 +319,8 @@ def main():
                                    'keep_step_size': False,
                                    'use_layer_normalization': False,
                                    'drop_prob': 0.,
-                                   'use_zoneout': False}
+                                   'use_zoneout': False,
+                                   'skip_connections': False}
     experiment_path, hyperparams, resuming = utils.maybe_create_experiment_folder(args, exclude=hyperparams_to_exclude,
                                                                                   retrocompatibility_defaults=retrocompatibility_defaults)
 
@@ -327,13 +333,11 @@ def main():
     with Timer("Loading dataset", newline=True):
         trainset_volume_manager = VolumeManager()
         validset_volume_manager = VolumeManager()
-        trainset = datasets.load_tractography_dataset(args.train_subjects, trainset_volume_manager, name="trainset", use_sh_coeffs=args.use_sh_coeffs)
-        validset = datasets.load_tractography_dataset(args.valid_subjects, validset_volume_manager, name="validset", use_sh_coeffs=args.use_sh_coeffs)
+        trainset = datasets.load_tractography_dataset(args.train_subjects, trainset_volume_manager, name="trainset",
+                                                      use_sh_coeffs=args.use_sh_coeffs)
+        validset = datasets.load_tractography_dataset(args.valid_subjects, validset_volume_manager, name="validset",
+                                                      use_sh_coeffs=args.use_sh_coeffs)
         print("Dataset sizes:", len(trainset), " |", len(validset))
-
-        if args.view:
-            tsne_view(trainset, trainset_volume_manager)
-            sys.exit(0)
 
         batch_scheduler = batch_scheduler_factory(hyperparams, dataset=trainset, train_mode=True)
         print("An epoch will be composed of {} updates.".format(batch_scheduler.nb_updates_per_epoch))
