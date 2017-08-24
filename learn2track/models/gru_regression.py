@@ -123,7 +123,8 @@ class GRU_Regression(GRU):
                                        sequences=[T.transpose(X, axes=(1, 0, 2))],
                                        outputs_info=outputs_info_h + [None],
                                        non_sequences=self.parameters + self.volume_manager.volumes,
-                                       strict=True)
+                                       strict=True,
+                                       truncate_gradient=50)
 
         self.graph_updates = updates
         # Put back the examples so they are in the first dimension.
