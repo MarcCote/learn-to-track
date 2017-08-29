@@ -126,8 +126,13 @@ def main():
                 assert trainset_size + validset_size + testset_size == nb_examples
 
                 trainset_indices = indices[:trainset_size]
-                validset_indices = indices[trainset_size:-testset_size]
-                testset_indices = indices[-testset_size:]
+
+                if testset_size > 0:
+                    validset_indices = indices[trainset_size:-testset_size]
+                    testset_indices = indices[-testset_size:]
+                else:
+                    validset_indices = indices[trainset_size:]
+                    testset_indices = []
 
                 train_data.add(streamlines[trainset_indices], bundle_name)
                 valid_data.add(streamlines[validset_indices], bundle_name)
