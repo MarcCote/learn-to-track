@@ -287,11 +287,15 @@ def horizon_flow(input_files, noisy_streamlines_sigma=0., verbose=True):
             # tractography_data.streamlines = tractography_data.streamlines[idx[:200]]
             # tractograms.append(tractography_data.streamlines)
 
-            M = 2
-            # Take M streamlines per bundle
-            for k in sorted(tractography_data.name2id.keys()):
+
+            # Take M streamlines per bundle, but increase the value if there is only 1 bundle (i.e. whole brain)
+            bundle_names = sorted(tractography_data.name2id.keys())
+            M = 200 if len(bundle_names) > 1 else 10000
+            for k in bundle_names:
                 bundle_id = tractography_data.name2id[k]
-                streamlines = tractography_data.streamlines[tractography_data.bundle_ids == bundle_id][:M].copy()
+                bundle_streamlines = tractography_data.streamlines[tractography_data.bundle_ids == bundle_id]
+                indices = np.random.choice(len(bundle_streamlines), M)
+                streamlines = bundle_streamlines[indices].copy()
                 streamlines._lengths = streamlines._lengths.astype("int64")
                 streamlines = set_number_of_points(streamlines, nb_points=40)
                 tractograms.append(streamlines)
